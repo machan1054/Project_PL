@@ -1,34 +1,86 @@
 # project_pl
 
+typelist = {int: 'INT', str: 'STR'}
+
+def pl_type(obj):
+    if hasattr(obj, 'type'):
+        return obj.type
+    else:
+        tp = type(obj)
+        for t in typelist:
+            if tp is t:
+                return typelist[t]
+        raise IndexError()
+
 class pl_object():
     def __init__(self):
         pass
-    
-    def pr(self):
-        return type(self) + id(self)
 
 
 class PL_INT(pl_object):
     def __init__(self, num):
-        self.data = num
+        self.type = 'INT'
+        self.__data = num
 
-    def pr(self):
-        return str(self.data)
+    def __repr__(self):
+        return str(self.__data)
+
+    def __int__(self):
+        return self.__data
     
-    def add(self, arg):
-        tp = type(arg)
-        if tp is int:
-            self.data += arg
-        elif tp is str:
-            temp = PL_STR(str(self.data) + arg)
+    def __pl_str__(self):
+        return PL_STR(str(self.__data))
+    
+    def __add__(self, other):
+        tp = pl_type(other)
+        if tp == 'INT':
+            return self.__class__(self.__data + other)
+        elif tp == 'STR':
+            return PL_STR(str(self.__data) + int(other))
+        else:
+            raise TypeError()
+    
+    def __sub__(self, other):
+        tp = pl_type(other)
+        if tp == 'INT':
+            return self.__class__(self.__data - int(other))
+        else:
+            raise TypeError()
+    
+    def __mul__(self, other):
+        tp = pl_type(other)
+        if tp == 'INT':
+            return self.__class__(self.__data * int(other))
+        else:
+            raise TypeError("can't multiply sequence by non-int of type '{}'".format(other.type))
+
+    def __div__(self, other):
+        tp = pl_type(other)
+        if tp == 'INT':
+            return self.__class__(self.__data / int(other))
+        else:
+            raise TypeError()
 
 
 class PL_STR(pl_object):
     def __init__(self, s):
-        self.data = s
+        self.type = 'STR'
+        self.__data = s
 
-    def pr(self):
-        return self.data
+    def __repr__(self):
+        return self.__data
+    
+    def __add__(self, other):
+        return self.__class__(self.__data + str(other))
 
-def PL_PRINT(obj):
-    print(obj.pr())
+    def __sub__(self, other):
+        return self.__class__(self.__data.replace(other, ''))
+
+    def __mul__(self, other):
+        tp = pl_type(other)
+        if tp == 'INT':
+            return self.__class__(self.__data * int(other))
+        else:
+            raise TypeError("can't multiply sequence by non-int of type '{}'".format(tp))
+
+        

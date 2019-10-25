@@ -24,7 +24,7 @@ define_id = {
     'input': ['func', 'any']
 }
 
-sub_list = {'print': 'template.PL_PRINT'}
+sub_list = {'printf': 'template.PL_PRINT'}
 
 assignable_token = ['ID', 'INT', 'FLOAT', 'STR', 'BIN', 'OCT', 'HEX', 'BOOL']
 
@@ -37,43 +37,116 @@ class PL_SyntaxError(Exception):
 class PL_NameError(Exception):
     pass
 
+
+def operator_check(lex_data, mode='gen'):
+    try:
+        data = ''
+        follow = None
+        bracket = 0
+        while True:
+            if follow != 'oper':
+                this_token = token = lex_data.__next__()
+                if token[0] == 'LPAR':
+                    data += '('
+                    bracket += 1
+                    continue
+                if token[0] == 'ID':
+                    sid = token[1]
+                    data += token[1]
+                    this_token = token = lex_data.__next__()
+                    if token[0] == 'LPAR':
+                        data += args_check(lex_data, 'call', sid)
+                    if token[0] in ['ID', 'RPAR']:
+                        return data, token
+                elif token[0] in assignable_token:
+                    data += 'template.PL_{}({})'.format(token[0], token[1])
+                else:
+                    raise PL_SyntaxError("invalid syntax")
+            this_token = token = lex_data.__next__()
+            follow = None
+            if token[0] == 'ADD':
+                data += ' + '
+            elif token[0] == 'SUB':
+                data += ' - '
+            elif token[0] == 'MUL':
+                data += ' * '
+            elif token[0] == 'DIV':
+                data += ' / '
+            elif token[0] == 'DOT':
+                data += '.'
+            elif token[0] == 'EQ':
+                data += ' = '
+            elif token[0] == 'EQ2':
+                data += ' == '
+            elif token[0] == 'ADDEQ':
+                data += ' += '
+            elif token[0] == 'SUBEQ':
+                data += ' -= '
+            elif token[0] == 'MULEQ':
+                data += ' *= '
+            elif token[0] == 'DIVEQ':
+                data += ' /= '
+            elif token[0] == 'LCLS':
+                data += ' < '
+            elif token[0] == 'RCLS':
+                data += ' > '
+            elif token[0] == 'LCLS_EQ':
+                data += ' <= '
+            elif token[0] == 'RCLS_EQ':
+                data += ' >= '
+            elif token[0] == 'AMP':
+                data += ' & '
+            elif token[0] == 'VERT':
+                data += ' | '
+            elif token[0] == 'CAR':
+                data += ' ^ '
+            elif token[0] == 'OR':
+                data += ' or '
+            elif token[0] == 'AND':
+                data += ' and '
+            elif token[0] == 'NOT':
+                data += ' not '
+            elif token[0] == 'VERT2':
+                data += ' or '
+            elif token[0] == 'AMP2':
+                data += ' and '
+            elif token[0] == 'EX':
+                data += ' not '
+            elif token[0] == 'RAR':
+                this_token = token = lex_data.__next__()
+                if token[0] == 'ID':
+                    data += '.__{}__()'.format(token[1])
+                    follow = 'oper'
+            elif token[0] == 'RPAR':
+                if bracket <= 0:
+                    if mode == 'args':
+                        break
+                    else:
+                        raise PL_SyntaxError('invalid syntax')
+                data += ')'
+                bracket -= 1
+            elif token[0] == 'COMMA':
+                if mode == 'args':
+                    break
+            elif token[0] in ['LF', 'ID']:
+                break
+        return data, token
+    except StopIteration:
+        return data
+        
+
 def args_check(lex_iter, mode, mainid):
     global this_token, define_id
     argc = 0
-    this_token = token = lex_iter.__next__()
     data = '('
-    if mode == 'create':
-        args_token = ['ID']
-    else:
-        args_token = assignable_token
-    if token[0] in args_token:
-        while token[0] in args_token:
-            sid = token[1]
-            data += token[1]
-            argc += 1
-            this_token = token = lex_iter.__next__()
-            if token[0] == 'COMMA':
-                data += ', '
-                this_token = token = lex_iter.__next__()
-                continue
-            elif token[0] == 'RPAR':
-                break
-            elif token[0] == 'LPAR':
-                data += args_check(lex_iter, 'call', sid)
-                this_token = token = lex_iter.__next__()
-                if token[0] == 'COMMA':
-                    data += ', '
-                    this_token = token = lex_iter.__next__()
-                    continue
-                elif token[0] == 'RPAR':
-                    break
-                else:
-                    raise PL_SyntaxError("missing of ')'")
-        else:
-            raise PL_SyntaxError('invalid syntax')
-    elif token[0] != 'RPAR':
-        raise PL_SyntaxError("missing of ')'")
-    data += ')'
+    while True:
+        temp, token = operator_check(lex_iter, 'args')
+        data += temp
+        if token[0] == 'COMMA':
+            data += ', '
+        elif token[0] == 'RPAR':
+            data += ')'
+            break
     if mode == 'call':
         if not mainid in define_id:
             raise PL_NameError("name '" + mainid + "' is not defined")
@@ -82,7 +155,6 @@ def args_check(lex_iter, mode, mainid):
         elif define_id[mainid][1] != 'any' and define_id[mainid][1] != argc:
             raise PL_SyntaxError(
                 'too many or less argument(s): "' + mainid + '()"')
-        
         return data
     elif mode == 'create':
         return data, argc
@@ -93,12 +165,13 @@ def parse(lex_list):
     result = 'import template\n'
     indent = 0
     lex_data = iter(lex_list)
+    running_func = ['main']
     mode = [['module', '<main>']]
+    this_token = token = lex_data.__next__()
     try:
         while True:
             data = ''
             data += '  ' * indent
-            this_token = token = lex_data.__next__()
             if token[0] == 'FUNC':       # 関数定義
                 data += 'def '
                 this_token = token = lex_data.__next__()
@@ -116,6 +189,8 @@ def parse(lex_list):
                         result += data
                         define_id[mainid] = ['func', argc]
                         mode.append(['func', mainid])
+                        this_token = token = lex_data.__next__()
+                        running_func.append(mainid)
                         continue             # 関数定義ここまで
             
             elif token[0] == 'ID':
@@ -129,41 +204,37 @@ def parse(lex_list):
                     data += args_check(lex_data, 'call', mainid)
                     data += '\n'
                     result += data
+                    this_token = token = lex_data.__next__()
                     continue                  # 関数呼び出しここまで
                 elif token[0] == 'EQ':        #代入
                     data += mainid + ' = '
-                    this_token = token = lex_data.__next__()
-                    if token[0] == 'ID':
-                        sid = token[1]
-                        data += token[1]
-                        this_token = token = lex_data.__next__()
-                        if token[0] == 'LPAR':
-                            data += args_check(lex_data, 'call', sid)
-                        data += '\n'
-                        result += data
-                        continue
-                    elif token[0] in assignable_token:
-                        data += 'template.PL_{}({})\n'.format(token[0], token[1])
-                        result += data
-                        continue                  # 代入ここまで
+                    temp, token = operator_check(lex_data)
+                    data += temp + '\n'
+                    result += data
+                    continue
+            elif token[0] == 'LF':
+                this_token = token = lex_data.__next__()
+                continue
 
             elif token[0] == 'ENDFUNC':       # 関数定義部終わり
                 if mode[-1][0] == 'func':
                     indent -= 1
                     mode.pop(-1)
+                    running_func.pop(-1)
+                    this_token = token = lex_data.__next__()
                     continue
 
-            raise PL_SyntaxError(token)
+            raise PL_SyntaxError('invalid syntax')
     except StopIteration:
         return result
     except PL_SyntaxError as e:
-        print(err_fmt.format(filename, this_token[2], mode[-1][1]))
+        print(err_fmt.format(filename, this_token[2], running_func[-1]))
         print('  {}'.format(source.split('\n')[this_token[2][0]-1]))
         print('  ' + ' '*(this_token[2][1]-1) + '^')
         print('SyntaxError:', e)
         exit(1)
     except PL_NameError as e:
-        print(err_fmt.format(filename, this_token[2], mode[-1][1]))
+        print(err_fmt.format(filename, this_token[2], running_func[-1]))
         print('  {}'.format(source.split('\n')[this_token[2][0]]))
         print('  ' + ' '*(this_token[2][1]-1) + '^')
         print('NameError:', e)
