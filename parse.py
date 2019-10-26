@@ -61,6 +61,7 @@ def print_err(e, running_func):
     print('  {}'.format(source.split('\n')[this_token[2][0]-1]))
     print('  ' + ' '*(this_token[2][1]-1) + '^')
     print(e.name + ' :', e)
+    print(this_token)
     exit(1)
 
 
@@ -250,7 +251,22 @@ def parse(lex_list):
             data += '  ' * indent
             this_token = token
 
-            if token[0] == 'HASH':  # プロパティの設定
+            
+            if token[0] == 'COMM_BEG':
+                comment_depth += 1
+                this_token = token = lex_iter.__next__()
+                continue
+
+            elif token[0] == 'COMM_END':
+                comment_depth -= 1
+                this_token = token = lex_iter.__next__()
+                continue
+
+            elif comment_depth > 0:
+                this_token = token = lex_iter.__next__()
+                continue
+
+            elif token[0] == 'HASH':  # プロパティの設定
                 this_token = token = lex_iter.__next__()
                 if token[0] == 'ID':
                     mainid = token[1]
