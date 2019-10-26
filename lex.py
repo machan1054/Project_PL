@@ -10,17 +10,20 @@ print('test')
 num = 0x1F -> str
 """
 
-regre = [
+regre_r = [
         [r'class', 'CLASS'],
         [r'endclass', 'ENDCLASS'],
+        [r'import', 'import'],
         [r'func', 'FUNC'],
         [r'endfunc', 'ENDFUNC'],
         [r'do', 'DO'],
         [r'end', 'END'],
         [r'for', 'FOR'],
+        [r'in', 'IN'],
         [r'while', 'WHILE'],
         [r'endloop', 'ENDLOOP'],
         [r'if', 'IF'],
+        [r'elsif', 'ELSIF'],
         [r'else', 'ELSE'],
         [r'endif', 'ENDIF'],
         [r'return', 'RETURN'],
@@ -31,21 +34,22 @@ regre = [
         [r'not', 'NOT'],
         [r'true', 'BOOL'],
         [r'false', 'BOOL'],
+        [r'null', 'NULL'],
         [r"'.*'", 'STR'],
         [r'".*"', 'STR'],
         [r'0b[01]+', 'BIN'],
         [r'0o[0-7]+', 'OCT'],
         [r'0x[0-9A-Fa-f]+', 'HEX'],
-        [r'[a-z][a-z0-9]*', 'ID'], 
-        [r'0|[1-9][0-9]*', 'INT'],
-        [r'-0|[1-9][0-9]*', 'INT'],
-        [r'0|[1-9][0-9]*[eE][+-]{0,1}[0-9]+', 'INT'],
-        [r'-0|[1-9][0-9]*[eE][+-]{0,1}[0-9]+', 'INT'],
-        [r'([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+)', 'FLOAT'],
-        [r'-([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+)', 'FLOAT'],
-        [r'([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+)[eE][+-]{0,1}[0-9]*', 'FLOAT'], 
-        [r'-([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+)[eE][+-]{0,1}[0-9]*', 'FLOAT'],
+        ['[A-Za-z_\u3040-\u3098\u30a1-\u30fa\u30fc\u4e00-\u9fff][A-Za-z0-9_\u3040-\u3098\u30a1-\u30fa\u30fc\u4e00-\u9fff]*', 'ID'],
+        [r'(0|[1-9])[0-9]*', 'INT'],
+        [r'(0|[1-9])[0-9]*[eE]([\+-]{0,1})[0-9]+', 'FLOAT'],
+        [r'(([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+))', 'FLOAT'],
+        [r'(([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+))[eE][\+-]{0,1}[0-9]*', 'FLOAT'],
+        [r'#', 'HASH'],
+        [r'/\*', 'COMM_BEG'],
+        [r'\*/', 'COMM_END'],
         [r',', 'COMMA'],
+        [r':', 'COR'], 
         [r'\^', 'CAR'],
         [r'<-', 'LAR'],
         [r'->', 'RAR'],
@@ -77,18 +81,21 @@ regre = [
         [r'\.', 'DOT'],
         [r'\(', 'LPAR'],
         [r'\)', 'RPAR'],
-        [r'\n', 'LF'],
+        [r'\n|\r\n|\r', 'LF'],
         ['[\ \?\t]', None],
         ['//.+', None],
         ['.', 'ERROR']
 ]  
 
+regre = []
+for i in regre_r:
+    regre.append([re.compile(i[0]), i[1]])
 
 
 def lex(s, line_n=1, row=1):
     result = []
     for r in regre:
-        match = re.match(r[0], s)
+        match = r[0].match(s)
         if match:
             result.append([r, match.group()])
     if len(result) != 0:
@@ -97,7 +104,7 @@ def lex(s, line_n=1, row=1):
         if maxdata:
             result3 = [maxdata[0][1], maxdata[1], (line_n, row)]
             row += len(maxdata[1])
-            line2 = re.sub(r'^' + maxdata[0][0], '', s, count=1)
+            line2 = maxdata[0][0].sub('', s, count=1)
             result4 = []
             if result3[0] == 'LF':
                 line_n += 1
