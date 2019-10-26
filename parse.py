@@ -1,22 +1,7 @@
 import lex
 import sys
 
-if len(sys.argv) != 2:
-    exit
-
-filename = 'test.txt'
-with open(filename, 'r') as f:
-    source = f.read()
-
-
-def main():
-    lex_iter = lex.lex(source)
-    parse_data = parse(lex_iter)
-    with open('out.py', 'w') as f:
-        f.write(parse_data)
     
-
-
 define_id = {
     'print': ['FUNC', 'ANY'],
     'puts': ['FUNC', 'ANY'],
@@ -42,17 +27,32 @@ prop_list = {'use_py_type': False}
 
 assignable_token = ['ID', 'INT', 'FLOAT', 'STR', 'BIN', 'OCT', 'HEX', 'BOOL']
 
+filename = 'test.txt'
+with open(filename, 'r') as f:
+    source = f.read()
+
+def main():
+    
+    lex_iter = lex.lex(source)
+    parse_data = parse(lex_iter)
+    with open('out.py', 'w') as f:
+        f.write(parse_data)
+
+
 this_token = []
 
-class PL_SyntaxError(Exception):
+class PL_Exception(Exception):
+    pass
+
+class PL_SyntaxError(PL_Exception):
     name = 'Syntax error'
 
 
-class PL_NameError(Exception):
+class PL_NameError(PL_Exception):
     name = 'Name error'
 
 
-class PL_TypeError(Exception):
+class PL_TypeError(PL_Exception):
     name = 'Type error'
 
 
@@ -64,29 +64,36 @@ def print_err(e, running_func):
     exit(1)
 
 
-def operator_check(lex_iter, mode='normal'):
+def operator_check(lex_iter, mode='normal', token=[None, None]):
     global this_token
     try:
         data = ''
         follow = 'oper' if mode == 'opstart' else None
         continue_Token = True
         minus = False
+        pass_next = mode in ['func call', 'func create']
         bracket = 0
+        argc = 0
         while True:
             if not follow:
-                this_token = token = lex_iter.__next__()
-                if token[0] == 'LPAR':
-                    data += '('
-                    bracket += 1
-                    continue
+                if not pass_next:
+                    this_token = token = lex_iter.__next__()
+                pass_next = False
                 if token[0] == 'ID':
+                    argc += 1
                     continue_Token = False
                     subid = token[1]
                     data += token[1]
                     this_token = token = lex_iter.__next__()
                     if token[0] == 'LPAR':
-                        data += args_check(lex_iter, 'call', subid)
-                        continue_Token = True
+                        temp, token = operator_check(lex_iter, 'func call', token)
+                        bracket += 1
+                        data += temp
+                        continue_Token = False
+                elif token[0] == 'LPAR':
+                    data += '('
+                    bracket += 1
+                    continue
                 elif token[0] in ['INT', 'FLOAT'] and minus:
                     if prop_list['use_py_type']:
                         data += ' -' + token[1]
@@ -107,9 +114,11 @@ def operator_check(lex_iter, mode='normal'):
                     minus = True
                     continue
                 else:
-                    raise PL_SyntaxError("invalid syntax")
+                    break
+            
             if minus:
                 raise PL_TypeError("bad operand type for unary -: {}".format(token[0]))
+
             if continue_Token:
                 this_token = token = lex_iter.__next__()
             
@@ -173,20 +182,26 @@ def operator_check(lex_iter, mode='normal'):
                     data += '.__{}__()'.format(cast_type)
                     follow = 'oper'
             elif token[0] == 'RPAR':
-                if bracket <= 0:
-                    if mode == 'args':
-                        break
-                    else:
-                        raise PL_SyntaxError('invalid syntax')
-                data += ')'
                 bracket -= 1
+                data += ')'
+                if bracket <= 0:
+                    this_token = token = lex_iter.__next__()
+                    break
                 follow = 'oper'
+                if mode in ['func call', 'fumc create'] and bracket <= 0:
+                    mode = 'normal'
             elif token[0] == 'COMMA':
+                data += ', '
                 if mode == 'args':
                     break
-            elif token[0] in ['LF', 'ID', 'DO']:
+                if mode in ['func call', 'fumc create']:
+                    continue
+            else:
                 break
-        return data, token
+        if mode == 'func create':
+            return data, token, argc
+        else:
+            return data, token
     except StopIteration:
         return data
         
@@ -195,6 +210,7 @@ def args_check(lex_iter, mode, mainid):
     global this_token, define_id
     data = '('
     argc = 0
+    token=None
     while True:
         argc += 1
         temp, token = operator_check(lex_iter, 'args')
@@ -256,9 +272,8 @@ def parse(lex_list):
                     data += token[1]
                     this_token = token = lex_iter.__next__()
                     if token[0] == 'LPAR':
-                        temp, argc = args_check(lex_iter, 'create', mainid)
+                        temp, token, argc = operator_check(lex_iter, 'func create', token)
                         data += temp
-                    this_token = token = lex_iter.__next__()
                     if token[0] == 'DO':
                         data += ':\n'
                         indent += 1
@@ -292,22 +307,17 @@ def parse(lex_list):
                 mainid = token[1]
                 this_token = token = lex_iter.__next__()
                 if token[0] == 'LPAR':         # 関数呼び出し
-                    if mainid in func_list:
-                        data += func_list[mainid]
-                    else:
-                        data += mainid
-                    data += args_check(lex_iter, 'call', mainid)
-                    data += '\n'
+                    temp, token = operator_check(lex_iter, 'func call', token)
+                    data += mainid + temp + '\n'
                     result += data
-                    token = lex_iter.__next__()
                     continue
                 # 関数呼び出しここまで
 
                 elif token[0] == 'ID':       # 引数が1個の関数の可能性？
-                    if mainid in func_list:
-                        if func_list[mainid][1] in ['ANY', 1]:
+                    if mainid in define_id:
+                        if define_id[mainid][1] in ['ANY', 1]:
                             data += '{}({})'.format(mainid, token[1])
-                            temp, token = operator_check(lex_iter, mode='opstart')
+                            temp, token = operator_check(lex_iter, 'opstart', token)
                             data += temp + '\n'
                             result += data
                             continue
@@ -315,7 +325,7 @@ def parse(lex_list):
 
                 elif token[0] == 'EQ':        #代入
                     data += mainid + ' = '
-                    temp, token = operator_check(lex_iter)
+                    temp, token = operator_check(lex_iter, token=token)
                     data += temp + '\n'
                     result += data
                     continue
@@ -323,7 +333,7 @@ def parse(lex_list):
             
             elif token[0] == 'IF':  # if文
                 data += 'if '
-                temp, token = operator_check(lex_iter)
+                temp, token = operator_check(lex_iter, token=token)
                 if token[0] == 'DO':
                     mainid = temp
                     mode.append(['IF', temp, token[2]])
@@ -345,7 +355,7 @@ def parse(lex_list):
                     mode.pop(-1)
                     mode.append(['ELSIF', temp, temp])
                     data = data[:-2] + 'elif '
-                    temp, token = operator_check(lex_iter)
+                    temp, token = operator_check(lex_iter, token=token)
                     if token[0] == 'DO':
                         data += temp + ':\n'
                         while True:
@@ -386,7 +396,7 @@ def parse(lex_list):
 
             elif token[0] == 'FOR':       # for文
                 data += 'for '
-                token = lex_iter.__next__()
+                this_token = token = lex_iter.__next__()
                 if token[0] == 'ID':
                     mainid = token[1]
                     data += mainid
@@ -399,7 +409,7 @@ def parse(lex_list):
                             data += subid
                             this_token = token = lex_iter.__next__()
                             if token[0] == 'DO':
-                                mode.append(['FOR', temp, token[2]])
+                                mode.append(['LOOP', temp, token[2]])
                                 data += temp + ': # {}\n'.format(token[2][0])
                                 indent += 1
                                 while True:
@@ -414,9 +424,9 @@ def parse(lex_list):
 
             elif token[0] == 'WHILE':      # while文
                 data += 'while '
-                temp, token = operator_check(lex_iter)
+                temp, token = operator_check(lex_iter, token=token)
                 if token[0] == 'DO':
-                    mode.append(['WHILE', temp, token[2]])
+                    mode.append(['LOOP', temp, token[2]])
                     data += temp + ': # {}\n'.format(token[2][0])
                     indent += 1
                     while True:
@@ -430,13 +440,40 @@ def parse(lex_list):
                 # while文ここまで
 
             elif token[0] == 'ENDLOOP':
-                if mode[-1][0] in ['FOR', 'WHILE']:
+                if 'LOOP' in [i[0] for i in mode]:
                     indent -= 1
                     data = data[:-2] + '# endloop {}\n'.format(mode[-1][2][0])
                     result += data
                     mode.pop(-1)
                     token = lex_iter.__next__()
                     continue
+
+            elif token[0] == 'BREAK':
+                if 'LOOP' in [i[0] for i in mode]:
+                    data += 'break\n'
+                    result += data
+                    token = lex_iter.__next__()
+                    continue
+            
+            elif token[0] == 'CONTINUE':
+                if 'LOOP' in [i[0] for i in mode]:
+                    data += 'continue\n'
+                    result += data
+                    token = lex_iter.__next__()
+                    continue
+            
+            elif token[0] == 'RETURN':
+                if running_func == 'main':
+                    data += 'exit'
+                    token = lex_iter.__next__()
+                    if token[0] in assignable_token:
+                        data += '({})'.format(token[1])
+                else:
+                    data += 'return'
+                    temp, token = operator_check(lex_iter, token=token)
+                    data += ' ' + temp
+                result += data + '\n'
+                continue
 
             elif token[0] == 'LF':
                 token = lex_iter.__next__()
@@ -448,11 +485,7 @@ def parse(lex_list):
             raise PL_SyntaxError('invalid syntax')
     except StopIteration:
         return result
-    except PL_SyntaxError as e:
-        print_err(e, running_func)
-    except PL_NameError as e:
-        print_err(e, running_func)
-    except PL_TypeError as e:
+    except PL_Exception as e:
         print_err(e, running_func)
 
 
